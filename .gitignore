@@ -1,0 +1,10 @@
+
+# Secrets
+backend/.env
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Large training dataset
+ml/data/brist1d/train.csv
