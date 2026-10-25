@@ -1,3 +1,259 @@
+import { useEffect, useState } from 'react'
+import './App.css'
+
+// Set VITE_API_URL to your deployed backend URL in Vercel.
+// Local development falls back to the local FastAPI server.
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
+
+function App() {
+  const [showMealForm, setShowMealForm] = useState(false)
+
+  const [foodImage, setFoodImage] = useState(null)
+  const [foodPredictions, setFoodPredictions] = useState([])
+  const [selectedFood, setSelectedFood] = useState(null)
+  const [identifyingFood, setIdentifyingFood] = useState(false)
+
+  const [foods, setFoods] = useState([])
+  const [foodId, setFoodId] = useState('')
+  const [quantity, setQuantity] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const [showGlucoseForm, setShowGlucoseForm] = useState(false)
+  const [glucoseValue, setGlucoseValue] = useState('')
+  const [glucoseContext, setGlucoseContext] = useState('before_meal')
+
+  const [analysis, setAnalysis] = useState([])
+  const [showInsights, setShowInsights] = useState(false)
+
+  // Load foods from backend
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/foods`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Could not load foods (HTTP ${response.status})`)
+        }
+        return response.json()
+      })
+      .then((data) => {
+        // The backend may return either { foods: [...] } or a direct array.
+        const foodRows = Array.isArray(data) ? data : (data.foods || [])
+
+        const formattedFoods = foodRows
+          .map((food) => {
+            if (Array.isArray(food)) {
+              return {
+                id: food[0],
+                name: food[1],
+                carbohydrates: food[2],
+                protein: food[3],
+                fiber: food[4],
+                calories: food[5],
+              }
+            }
+
+            return {
+              id: food.id,
+              name: food.name,
+              carbohydrates: food.carbohydrates,
+              protein: food.protein,
+              fiber: food.fiber,
+              calories: food.calories,
+            }
+          })
+          .filter((food) => food.id != null && food.name)
+
+        setFoods(formattedFoods)
+        if (formattedFoods.length === 0) {
+          console.warn('The /foods endpoint returned no food records.')
+        }
+      })
+      .catch((error) => {
+        console.error('Error loading foods:', error)
+      })
+  }, [])
+
+  // Identify food using AI
+  const identifyFood = async () => {
+    if (!foodImage) {
+      alert('Please select a food image first.')
+      return
+    }
+
+    setIdentifyingFood(true)
+    setFoodPredictions([])
+    setSelectedFood(null)
+
+    const formData = new FormData()
+    formData.append('file', foodImage)
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/identify-food`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      )
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setFoodPredictions(data.predictions || [])
+      } else {
+        alert('Food identification failed.')
+      }
+    } catch (error) {
+      console.error('Food identification error:', error)
+      alert('Could not connect to the food AI.')
+    } finally {
+      setIdentifyingFood(false)
+    }
+
+  }
+
+  // Select food predicted by AI
+  const selectFood = (prediction) => {
+    const matchedFood = foods.find(
+      (food) =>
+        food.name?.trim().toLowerCase() ===
+        prediction.food?.trim().toLowerCase()
+)
+
+    if (matchedFood) {
+      setSelectedFood(matchedFood)
+      setFoodId(String(matchedFood.id))
+      setShowMealForm(true)
+    } else {
+      alert(`Nutrition data not found for ${prediction.food}`)
+    }
+  }
+
+  // Record meal
+  const recordMeal = async (event) => {
+    event.preventDefault()
+
+    if (saving) return
+
+    setSaving(true)
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/meals`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user_id: 1,
+            food_id: Number(foodId),
+            quantity: Number(quantity),
+          }),
+        }
+      )
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert('Meal recorded successfully!')
+        setFoodId('')
+        setQuantity('')
+        setSelectedFood(null)
+        setShowMealForm(false)
+      } else {
+        alert('Something went wrong: ' + JSON.stringify(data))
+      }
+    } catch (error) {
+      console.error('Meal recording error:', error)
+      alert('Could not connect to the backend.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Record glucose
+  const recordGlucose = async (event) => {
+    event.preventDefault()
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/glucose`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user_id: 1,
+            glucose_value: Number(glucoseValue),
+            context: glucoseContext,
+          }),
+        }
+      )
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert('Glucose recorded successfully!')
+        setGlucoseValue('')
+        setGlucoseContext('before_meal')
+        setShowGlucoseForm(false)
+      } else {
+        alert('Something went wrong: ' + JSON.stringify(data))
+      }
+    } catch (error) {
+      console.error('Glucose recording error:', error)
+      alert('Could not connect to the backend.')
+    }
+  }
+
+  // Load insights
+  const loadAnalysis = async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/analysis/1`
+      )
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setAnalysis(data.analysis_data || [])
+        setShowInsights(true)
+      } else {
+        alert('Could not load insights')
+      }
+    } catch (error) {
+      console.error('Analysis error:', error)
+      alert('Could not connect to the backend.')
+    }
+  }
+
+  return (
+    <div className="app">
+
+      {/* Header */}
+      <header className="navbar">
+        <h1>GlucoBuddy</h1>
+        <p>Personal Food & Blood Glucose Insights</p>
+      </header>
+
+      <main className="dashboard">
+
+        {/* Welcome */}
+        <section className="welcome">
+          <h2>Welcome to GlucoBuddy 👋</h2>
+
+          <p>
+            Track your meals, record your glucose, and understand your
+            personal food-response patterns.
+          </p>
+        </section>
+
+        <section className="cards">
+
+          {/* ========================= */}
+          {/* IDENTIFY FOOD */}
+          {/* ========================= */}
 
           <div className="card">
 
@@ -158,3 +414,174 @@
 
                 <input
                   type="number"
+                  step="0.1"
+                  min="0.1"
+                  value={quantity}
+                  onChange={(event) =>
+                    setQuantity(event.target.value)
+                  }
+                  placeholder="Example: 2"
+                  required
+                />
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving
+                    ? 'Saving...'
+                    : 'Save Meal'}
+                </button>
+
+              </form>
+            )}
+
+          </div>
+
+
+          {/* ========================= */}
+          {/* RECORD GLUCOSE */}
+          {/* ========================= */}
+
+          <div className="card">
+
+            <h3>🩸 Record Glucose</h3>
+
+            <p>
+              Enter a blood glucose reading.
+            </p>
+
+            <button
+              onClick={() => setShowGlucoseForm(true)}
+            >
+              Record Glucose
+            </button>
+
+            {showGlucoseForm && (
+              <form onSubmit={recordGlucose}>
+
+                <label>Glucose Value</label>
+
+                <input
+                  type="number"
+                  step="0.1"
+                  value={glucoseValue}
+                  onChange={(event) =>
+                    setGlucoseValue(event.target.value)
+                  }
+                  placeholder="Example: 120"
+                  required
+                />
+
+                <label>Context</label>
+
+                <select
+                  value={glucoseContext}
+                  onChange={(event) =>
+                    setGlucoseContext(event.target.value)
+                  }
+                  required
+                >
+
+                  <option value="before_meal">
+                    Before Meal
+                  </option>
+
+                  <option value="after_meal">
+                    After Meal
+                  </option>
+
+                </select>
+
+                <button type="submit">
+                  Save Glucose
+                </button>
+
+              </form>
+            )}
+
+          </div>
+
+
+          {/* ========================= */}
+          {/* VIEW INSIGHTS */}
+          {/* ========================= */}
+
+          <div className="card">
+
+            <h3>📊 View Insights</h3>
+
+            <p>
+              Explore your meal and glucose patterns.
+            </p>
+
+            <button onClick={loadAnalysis}>
+              View Insights
+            </button>
+
+            {showInsights && (
+              <div>
+
+                <h4>Recent Meal Analysis</h4>
+
+                {analysis.length === 0 ? (
+                  <p>
+                    No analysis data available yet.
+                  </p>
+                ) : (
+                  analysis
+                    .slice(0, 5)
+                    .map((item) => (
+                      <div key={item.meal_id}>
+
+                        <p>
+                          <strong>
+                            {item.food}
+                          </strong>{' '}
+                          × {item.quantity}
+                        </p>
+
+                        <p>
+                          Carbohydrates:{' '}
+                          {item.carbohydrates} g
+                        </p>
+
+                        <p>
+                          Before glucose:{' '}
+                          {item.before_glucose ??
+                            'Not available'}
+                        </p>
+
+                        <p>
+                          After glucose:{' '}
+                          {item.after_glucose ??
+                            'Not available'}
+                        </p>
+
+                        <p>
+                          Glucose change:{' '}
+                          {item.glucose_change !== null
+                            ? item.glucose_change
+                            : 'Not available'}
+                        </p>
+
+                        <hr />
+
+                      </div>
+                    ))
+                )}
+
+              </div>
+            )}
+
+          </div>
+
+        </section>
+
+      </main>
+
+    </div>
+  )
+}
+
+export default App
