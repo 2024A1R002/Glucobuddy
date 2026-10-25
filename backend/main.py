@@ -38,11 +38,15 @@ print("Food recognition model loaded!")
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://glucobuddy-swart.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 model = joblib.load("../ml/glucobuddy_glucose_model.pkl")
 
 
